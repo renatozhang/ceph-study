@@ -41,11 +41,15 @@ Ceph是一个开源的分布式文件系统。因为它还支持块存储、对�
 ## 实验集群部署
 ### 主机准备（禁用selinux，关闭防火墙）
 每个节点两个网卡ens33和ens34
+
 enss33作为cluster_network
+
 enss34作为public_network
 
 ens33 自动获取  ens34 设置静态IP ens34的IP地址作为管理地址
+
 hostname	IP			Disk
+
 ceph-node1  ens34 192.168.1.101  sda(OS) sdb sdc sdd
 
 ceph-node2  ens34 192.168.1.102  sda(OS) sdb sdc sdd
