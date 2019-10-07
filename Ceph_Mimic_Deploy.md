@@ -41,9 +41,11 @@ Ceph是一个开源的分布式文件系统。因为它还支持块存储、对�
 ## 实验集群部署
 ### 主机准备（禁用selinux，关闭防火墙）
 每个节点两个网卡ens33和ens34
+enss33作为cluster_network
+enss34作为public_network
 
 ens33 自动获取  ens34 设置静态IP ens34的IP地址作为管理地址
-hostname	IP						Disk
+hostname	IP			Disk
 ceph-node1  ens34 192.168.1.101  sda(OS) sdb sdc sdd
 
 ceph-node2  ens34 192.168.1.102  sda(OS) sdb sdc sdd
@@ -128,7 +130,7 @@ ceph-node1  ens34 192.168.1.104  sda(OS) sdb sdc sdd
 	type=rpm-md
 	gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
 	priority=1
-#### 更新软件源并安装ceph-deploy管理工具 
+#### 更新软件yum源并安装ceph-deploy管理工具 
 	[root@ceph-node1 ceph]# yum clean all
 	[root@ceph-node1 ceph]# yum makecache
 	# 在ceph-node1节点上执行下面的命令安装ceph-deploy
@@ -272,7 +274,7 @@ ceph12(Lurminous)开始，需要为每个monitor创建一个mgr(其功能待研�
 	    usage:   3.0 GiB used, 27 GiB / 30 GiB avail
 	    pgs:    
 
-ceph-deploy 的disk zap命令会销售磁盘中已存在的分区表和数据。运行这个命令前，未必确保使用争取的磁盘名称
+ceph-deploy 的disk zap命令会销毁磁盘中已存在的分区表和数据。运行这个命令前，未必确保使用争取的磁盘名称
 	
 	[root@ceph-node1 ceph]# ceph-deploy disk zap ceph-node1 /dev/sdb /dev/sdc /dev /sdd
 	# 磁盘作block ，无block.db, 无block.wal
@@ -369,7 +371,8 @@ ceph-deploy 的disk zap命令会销售磁盘中已存在的分区表和数据。
 	[ceph-node2][WARNIN] monitor: mon.ceph-node2, might not be running yet
 	# 报如上错误 经查证 原来要在ceph.conf定义一下Pulic_network
 	vim ceph.conf
-	public_network=192.168.1.0/24
+	public_network = 192.168.1.101/24
+	cluster_network = 192.168.98.0/24
 	# 当更新完ceph.conf , 运行同样的命令会再报错
 	[root@ceph-node1 ceph]# ceph-deploy mon add ceph-node2
 	[ceph_deploy.conf][DEBUG ] found configuration file at: /root/.cephdeploy.conf
@@ -397,7 +400,7 @@ ceph-deploy 的disk zap命令会销售磁盘中已存在的分区表和数据。
 	[ceph_deploy][ERROR ] GenericError: Failed to configure 1 admin hosts，
 	# 原因是conf不同步所致，--overwrite的使用各不相同 通过-h出来的命令是
 	
-	[root@ceph-node1 ceph]# ceph-deploy --overwrite-conf config push  ceph-node1 ceph-node2 ceph-node3
+	[root@ceph-node1 ceph]# ceph-deploy --overwrite-conf config push  ceph-node1 ceph-node2 ceph-node3 ceph-node4
 
 	# 然后再运行ceph-deploy mon add ceph-node2
 	[root@ceph-node1 ceph]# ceph-deploy mon add ceph-node2
