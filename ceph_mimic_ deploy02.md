@@ -57,6 +57,18 @@ Ceph需要安装第三方库。对于RHEL系列的linux发行版本，可以从E
 ## 部署Ceph集群
 现在已经在所有节点上安装好Ceph，并且可以开始Ceph的手工部署了。手工部署过程主要由哪些配置管理工具开发部署脚本的人员使用，比如ansible、chef以及puppet，需要知道部署流程。作为一名管理员，可以使用手工部署的方法来增加Ceph经验。大部分生产环境的部署基于ceph-deploy工具。
 
+
+
+## NTP服务配置
+	[root@ceph-node2 ~]# vim /etc/ntp.conf
+	server 192.168.1.101  iburst
+	### 手动同步下时间
+	[root@ceph-node2 ~]# ntpdate -u 192.168.1.101 
+	### 启动服务
+	[root@ceph-node2 ~]# systemctl restart ntpd
+	[root@ceph-node2 ~]# systemctl enable ntpd 
+	### 检查同步
+	[root@ceph-node2 ~]# ntpq -p
 ## 部署monitor
 ### 为Ceph创建一个目录并且创建Ceph集群文件
 	[root@ceph-node1 ceph]# mkdir /etc/ceph
@@ -69,6 +81,7 @@ Ceph需要安装第三方库。对于RHEL系列的linux发行版本，可以从E
 默认集群名字为ceph。配置文件名称是/etc/ceph/ceph.conf
 
 使用前面步骤中uuidgen命令输出作为配置文件中的fsid参数
+
 	[root@ceph-node1 ~]# cat /etc/ceph/ceph.conf
 	[global]
 	fsid = d30700a1-e1a7-407b-aacd-0b82ed71fee7
@@ -155,4 +168,58 @@ monmaptool --create --add {hostname} {ip-address} --fsid 45ef193b-3d8f-496f-8a96
 		    objects: 0  objects, 0 B
 		    usage:   0 B used, 0 B / 0 B avail
 		    pgs: 
-			
+### 添加mon服务
+#### 拷贝配置文件和客户端秘钥
+	[root@ceph-node3 ~]# scp root@192.168.1.101:/etc/ceph/ceph.conf /etc/ceph/
+	[root@ceph-node3 ~]# scp root@192.168.1.101:/etc/ceph/ceph.client.admin.keyring /etc/ceph/
+#### 修改配置文件
+	[root@ceph-node3 ~]# cat /etc/ceph/ceph.conf 
+	[global]
+	fsid = 38f45748-f634-48dd-a196-8593562cd385
+	auth cluster required = cephx
+	auth service required = cephx
+	auth client required = cephx
+	osd journal size = 1024
+	osd pool default size = 2
+	osd pool default min size = 1
+	osd pool default pg num = 128
+	osd pool default pgp num = 128
+	osd crush chooseleaf type = 1
+	
+	[mon.ceph-node3]
+	host = ceph-node3
+	mon addr = 192.168.1.103:6789
+	# 配置完成前需要保留下面的配置
+	[mon.ceph-node1]
+	host = ceph-node1
+	mon addr = 192.168.1.101:6789
+
+#### 获取mon集群秘钥环
+	[root@ceph-node3 ~]# ceph auth get mon. -o /tmp/ceph.mon.keyring
+#### 获取mon映射文件（monmap）
+	[root@ceph-node3 ~]# ceph mon getmap -o /tmp/monmap
+#### 使用mon映射和秘钥环境填充新mon服务
+	[root@ceph-node3 ~]# ceph-mon --mkfs -i ceph-node3 --monmap /tmp/monmap --keyring /tmp/ceph.mon.keyring 
+#### 标记mon服务就绪
+	[root@ceph-node3 ~]# touch /var/lib/ceph/mon/ceph-ceph-node3/done
+#### 启动mon服务
+	[root@ceph-node3 ~]# chown -R ceph:ceph /var/lib/ceph/
+	[root@ceph-node3 ~]# systemctl start ceph-mon@ceph-node3
+	[root@ceph-node3 ~]# systemctl enable ceph-mon@ceph-nodde3
+
+#### 检测服务
+	[root@ceph-node3 ~]# ceph -s
+	  cluster:
+	    id:     38f45748-f634-48dd-a196-8593562cd385
+	    health: HEALTH_OK
+	 
+	  services:
+	    mon: 3 daemons, quorum ceph-node1,ceph-node2,ceph-node3
+	    mgr: no daemons active
+	    osd: 0 osds: 0 up, 0 in
+	 
+	  data:
+	    pools:   0 pools, 0 pgs
+	    objects: 0  objects, 0 B
+	    usage:   0 B used, 0 B / 0 B avail
+	    pgs:     	 
