@@ -373,6 +373,23 @@ monmaptool --create --add {hostname} {ip-address} --fsid 45ef193b-3d8f-496f-8a96
 	    pgs:     
 
 
+## 添加MDS节点
+###创建MDS数据目录
+	[root@ceph-node2 ~]# mkdir -p /var/lib/ceph/mds/ceph-ceph-node2
+### 创建秘钥环
+	[root@ceph-node2 ~]# ceph-authtool --create-keyring /var/lib/ceph/mds/ceph-ceph-node2/keyring --gen-key -n mds.ceph-node2
+	creating /var/lib/ceph/mds/ceph-ceph-node2/keyring
+### 导入秘钥环并设置权限
+	[root@ceph-node2 ~]# ceph auth  add mds.ceph-node2 osd 'allow rwx' mds 'allow' mon 'allow profile mds' -i /var/lib/ceph/mds/ceph-ceph-node2/keyring 
+added key for mds.ceph-node2
+### 修改修改配置文件
+
+### 启动服务
+	[root@ceph-node2 ~]# chown -R ceph:ceph /var/lib/ceph/mds/
+	[root@ceph-node2 ~]# systemctl start ceph-mds@ceph-node2
+	[root@ceph-node2 ~]# systemctl enable ceph-mds@ceph-node2
+	[root@ceph-node2 ~]# systemctl status ceph-mds@ceph-node2
+
 # 升级Ceph集群
 ## 查看当前版本
 	[root@ceph-node1 ~]# ceph -v 
