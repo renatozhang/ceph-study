@@ -373,5 +373,46 @@ monmaptool --create --add {hostname} {ip-address} --fsid 45ef193b-3d8f-496f-8a96
 	    pgs:     
 
 
-
 # 升级Ceph集群
+## 查看当前版本
+	[root@ceph-node1 ~]# ceph -v 
+##升级ceph存储库到期望的nautilus版本
+	[root@ceph-node1 ~]# cat /etc/yum.repos.d/
+	cat: /etc/yum.repos.d/: Is a directory
+	[root@ceph-node1 ~]# cat /etc/yum.repos.d/ceph.repo 
+	[Ceph]
+	name=Ceph packages for $basearch
+	baseurl=http://mirrors.aliyun.com/ceph/rpm-nautilus/el7/$basearch
+	enabled=1
+	gpgcheck=1
+	type=rpm-md
+	gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
+	priority=1
+	[Ceph-noarch]
+	name=Ceph noarch packages
+	baseurl=http://mirrors.aliyun.com/ceph/rpm-nautilus/el7/noarch
+	enabled=1
+	gpgcheck=1
+	type=rpm-md
+	gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
+	priority=1
+	[ceph-source]
+	name=Ceph source packages
+	baseurl=http://mirrors.aliyun.com/ceph/rpm-nautilus/el7/SRPMS
+	enabled=1
+	gpgcheck=1
+	type=rpm-md
+	gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
+	priority=1
+
+## 更新ceph软件
+	[root@ceph-node1 ~]# yum update ceph
+
+## 重启服务
+	[root@ceph-node2 ~]# systemctl restart ceph-mon@ceph-node2.service 
+	# 其它服务也重新启动一下
+	[root@ceph-node2 ~]# systemctl restart ceph-mgr@ceph-node1
+	[root@ceph-node2 ~]# systemctl restart ceph-osd@0.service 
+	
+## 如果使用dashboard,ceph是  (nautilus版) 需要安装 ceph-mgr-dashboard 
+	[root@ceph-node2 ~]# yum install -y ceph-mgr-dashboard
