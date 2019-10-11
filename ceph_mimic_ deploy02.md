@@ -8,32 +8,32 @@ Ceph需要安装第三方库。对于RHEL系列的linux发行版本，可以从E
 ### 安装Ceph需要的第三方二进制文件
 	[root@ceph-node1 ~]# yum install -y snappy leveldb gdisk python-argparse gperftools-libs
 ### 创建一个Ceph存储库文件用于描述Mimic发行版
-	[root@ceph-node1 ~]# cat /etc/yum.repos.d/ceph.repo 
-	[Ceph]
-	name=Ceph packages for $basearch
-	baseurl=http://mirrors.aliyun.com/ceph/rpm-mimic/el7/$basearch
-	enabled=1
-	gpgcheck=1
-	type=rpm-md
-	gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
-	priority=1
-	[Ceph-noarch]
-	name=Ceph noarch packages
-	baseurl=http://mirrors.aliyun.com/ceph/rpm-mimic/el7/noarch
-	enabled=1
-	gpgcheck=1
-	type=rpm-md
-	gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
-	priority=1
-	[ceph-source]
-	name=Ceph source packages
-	baseurl=http://mirrors.aliyun.com/ceph/rpm-mimic/el7/SRPMS
-	enabled=1
-	gpgcheck=1
-	type=rpm-md
-	gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
-	priority=1
-	
+		[root@ceph-node1 ~]# cat /etc/yum.repos.d/ceph.repo 
+		[Ceph]
+		name=Ceph packages for $basearch
+		baseurl=http://mirrors.aliyun.com/ceph/rpm-mimic/el7/$basearch
+		enabled=1
+		gpgcheck=1
+		type=rpm-md
+		gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
+		priority=1
+		[Ceph-noarch]
+		name=Ceph noarch packages
+		baseurl=http://mirrors.aliyun.com/ceph/rpm-mimic/el7/noarch
+		enabled=1
+		gpgcheck=1
+		type=rpm-md
+		gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
+		priority=1
+		[ceph-source]
+		name=Ceph source packages
+		baseurl=http://mirrors.aliyun.com/ceph/rpm-mimic/el7/SRPMS
+		enabled=1
+		gpgcheck=1
+		type=rpm-md
+		gpgkey=https://mirrors.aliyun.com/ceph/keys/release.asc
+		priority=1
+
 ### 安装Ceph软件包
 	[root@ceph-node1 ~]# yum install -y ceph
 ### 验证是否安装成功
