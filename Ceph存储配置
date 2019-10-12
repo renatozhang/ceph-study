@@ -1,0 +1,280 @@
+# Ceph存储配置
+
+## 创建Ceph块设备
+
+**Rados块设备（RBD）： 前身是ceph块设备，为Ceph客户端提供基于块得持久化存储，通常作为一个额外的磁盘使用。客户可以灵活地使用这个磁盘，可以作为裸设备使用，也可以格式化更文件系统，然后挂载它。RBD李永librbd库并将块数据连续地存储在跨越多个OSD的条带装存储空间中。RBD由Ceph的Rados层提供支持，因此每个块设备都分布多个Ceph节点上，从文提供了高性能和出色的可靠性。RBD具有丰富的企业特性，如自动精简配置（thin provisioning）、动态调整容量、快照、写时复制以及缓存等。RBD协议作为主线内核驱动程序有Linux完全支持；它还支持多种虚拟化平台，如KVM、QEMU和libvirt，使得虚拟机可以利用Ceph块设备。所有这些特点使RBD成为云平台（例如Openstack和Cloudstack）的一个理想选择。**
+
+
+## 创建Ceph文件系统
+
+**要创建Ceph的块设备，需要先登录Ceph集群的任意一个monitor节点，或者登录具有ceph集群管理员权限的一台管理主机。也可以在任意一个Ceph客户端节点上创建Ceph RBD。出于安全考虑，不应该吧Ceph管理秘钥保存在Ceph节点和管理主机之外的机器上**
+
+### 创建一个名为ceph-clent1-rbd1,大小为10240MB的RBD设备
+#### 首先创建一个RBD存储池
+	[root@ceph-node1 ~]# ceph osd pool  create rbd 128 128  
+#### 创建块设备
+	[root@ceph-node1 ~]# rbd create ceph-client1-rbd1 --size 10240
+#### 列出RBD镜像的详细信息
+	[root@ceph-node1 ~]# rbd ls
+	ceph-client1-rbd1
+#### 检查一个rbd镜像的详细信息，
+	[root@ceph-node1 ~]# rbd --image ceph-client1-rbd1 info
+	rbd image 'ceph-client1-rbd1':
+	        size 10 GiB in 2560 objects
+	        order 22 (4 MiB objects)
+	        snapshot_count: 0
+	        id: 176344ce5ef1
+	        block_name_prefix: rbd_data.176344ce5ef1
+	        format: 2
+	        features: layering, exclusive-lock, object-map, fast-diff, deep-flatten
+	        op_features: 
+	        flags: 
+	        create_timestamp: Sat Oct 12 08:40:11 2019
+	        access_timestamp: Sat Oct 12 08:40:11 2019
+	        modify_timestamp: Sat Oct 12 08:40:11 2019
+#### 默认情况下，RBD镜像会存储在ceph集群的rbd存储池中，使用-p参数指定其它池。
+	[root@ceph-node1 ~]# rbd --image ceph-client1-rbd1 info -p rbd
+
+#### 移除rbd
+	[root@ceph-node1 ~]# rbd remove ceph-client-rbd1
+
+### 创建第一个ceph客户端
+	创建一台ceph-client的虚拟机
+### 映射RADOS块设备
+#### 查看内核版本是否支持ceph
+**Linux 内核从2.6.32版本开始支持ceph。对于客户端机器来说，要支持本地化方式访问ceph块设备和文件系统，建议使用2.6.34及以上版本的Linux内核。**
+
+	[root@ceph-client1 ~]# uname -r
+	3.10.0-1062.el7.x86_64
+	[root@ceph-client1 ~]# modprobe rbd
+	[root@ceph-client1 ~]# 
+#### 为ceph-client1安装ceph二进制包
+[root@ceph-client1 ~]# yum instlall -y ceph
+#### 映射ceph-client1-rbd1的RBD的景象到ceph-client1节点
+	[root@ceph-client1 ~]# rbd map --image ceph-client1-rbd1
+	rbd: sysfs write failed
+	RBD image feature set mismatch. You can disable features unsupported by the kernel with "rbd feature disable ceph-client1-rbd1 object-map fast-diff deep-flatten".
+	In some cases useful info is found in syslog - try "dmesg | tail".
+	rbd: map failed: (6) No such device or address
+	# ceph新版中在map image时，给image默认加上了许多feature，通过rbd info可以查看到：
+		[root@ceph-node1 ~]# rbd --image ceph-client1-rbd1 info
+	rbd image 'ceph-client1-rbd1':
+	        size 10 GiB in 2560 objects
+	        order 22 (4 MiB objects)
+	        snapshot_count: 0
+	        id: 176344ce5ef1
+	        block_name_prefix: rbd_data.176344ce5ef1
+	        format: 2
+	        features: layering, exclusive-lock, object-map, fast-diff, deep-flatten
+	        op_features: 
+	        flags: 
+	layering: 支持分层
+	striping: 支持条带化 v2
+	exclusive-lock: 支持独占锁
+	object-map: 支持对象映射（依赖 exclusive-lock ）
+	fast-diff: 快速计算差异（依赖 object-map ）
+	deep-flatten: 支持快照扁平化操作
+	journaling: 支持记录 IO 操作（依赖独占锁）
+#### CentOS的3.10内核仅支持其中的layering feature，其他feature概不支持。我们需要手动disable这些features：
+	[root@ceph-client1 ~]# rbd feature disable ceph-client1-rbd1 exclusive-lock, object-map, fast-diff, deep-flatten 
+	# 重新映射rbd-client1-rbd1
+	[root@ceph-client1 ~]# rbd map ceph-client1-rbd1
+	/dev/rbd0
+	# 查看本次映射对应的操作系统设备名
+	[root@ceph-client1 ~]# rbd showmapped
+	id pool namespace image             snap device    
+	0  rbd            ceph-client1-rbd1 -    /dev/rbd0 
+#### 升级内核获得新特性支持
+**Ceph 10.x (Jewel),应该至少使用4.x内核。
+##### 启用 ELRepo 仓库
+
+	#导入ELRepo仓库的公共密钥
+	rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org
+	#安装ELRepo仓库的yum源
+	rpm -Uvh http://www.elrepo.org/elrepo-release-7.0-3.el7.elrepo.noarch.rpm
+##### 查看可用的系统内核包
+	[root@ceph-client1 ~]#  yum --disablerepo="*" --enablerepo="elrepo-kernel" list available
+	Loaded plugins: fastestmirror
+	Loading mirror speeds from cached hostfile
+	 * elrepo-kernel: mirrors.neusoft.edu.cn
+	Available Packages
+	elrepo-release.noarch                 7.0-4.el7.elrepo          elrepo-kernel
+	kernel-lt.x86_64                      4.4.196-1.el7.elrepo      elrepo-kernel
+	kernel-lt-devel.x86_64                4.4.196-1.el7.elrepo      elrepo-kernel
+	kernel-lt-doc.noarch                  4.4.196-1.el7.elrepo      elrepo-kernel
+	kernel-lt-headers.x86_64              4.4.196-1.el7.elrepo      elrepo-kernel
+	kernel-lt-tools.x86_64                4.4.196-1.el7.elrepo      elrepo-kernel
+	kernel-lt-tools-libs.x86_64           4.4.196-1.el7.elrepo      elrepo-kernel
+	kernel-lt-tools-libs-devel.x86_64     4.4.196-1.el7.elrepo      elrepo-kernel
+	kernel-ml-devel.x86_64                5.3.5-1.el7.elrepo        elrepo-kernel
+	kernel-ml-doc.noarch                  5.3.5-1.el7.elrepo        elrepo-kernel
+	kernel-ml-headers.x86_64              5.3.5-1.el7.elrepo        elrepo-kernel
+	kernel-ml-tools.x86_64                5.3.5-1.el7.elrepo        elrepo-kernel
+	kernel-ml-tools-libs.x86_64           5.3.5-1.el7.elrepo        elrepo-kernel
+	kernel-ml-tools-libs-devel.x86_64     5.3.5-1.el7.elrepo        elrepo-kernel
+	perf.x86_64                           5.3.5-1.el7.elrepo        elrepo-kernel
+	python-perf.x86_64                    5.3.5-1.el7.elrepo        elrepo-kernel
+	[root@ceph-client1 ~]# yum --enablerepo=elrepo-kernel install kernel-ml
+
+	[root@ceph-client1 ~]#  sudo awk -F\' '$1=="menuentry " {print i++ " : " $2}' /etc/grub2.cfg
+	0 : CentOS Linux (5.3.5-1.el7.elrepo.x86_64) 7 (Core)
+	1 : CentOS Linux (3.10.0-1062.el7.x86_64) 7 (Core)
+	2 : CentOS Linux (0-rescue-3fd40120db4e49d6a54a9ee4c23d1722) 7 (Core)
+##### 设置新得内核为grub2的默认版本
+1. 通过grub2-set-default 0 命令设置
+	 [root@ceph-client1 ~]# grub2-set-default 0
+2. 编辑 /etc/default/grub 文件
+	[root@ceph-client1 ~]# vim /etc/default/grub 
+	GRUB_TIMEOUT=5
+	GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
+	GRUB_DEFAULT=saved
+	GRUB_DISABLE_SUBMENU=true
+	GRUB_TERMINAL_OUTPUT="console"
+	GRUB_CMDLINE_LINUX="crashkernel=auto spectre_v2=retpoline rd.lvm.lv=centos/root rd.lvm.lv=centos/swap rhgb quiet"
+	GRUB_DISABLE_RECOVERY="true"
+
+#### RBD映射到OS，创建文件系统
+	[root@ceph-client1 ~]# fdisk -l /dev/rbd0 
+	Disk /dev/rbd0: 10.7 GB, 10737418240 bytes, 20971520 sectors
+	Units = sectors of 1 * 512 = 512 bytes
+	Sector size (logical/physical): 512 bytes / 512 bytes
+	I/O size (minimum/optimal): 4194304 bytes / 4194304 bytes
+#### 作为额外的磁盘或者设备使用
+	[root@ceph-client1 ~]# mkfs.xfs /dev/rbd0
+	meta-data=/dev/rbd0              isize=512    agcount=16, agsize=163840 blks
+	         =                       sectsz=512   attr=2, projid32bit=1
+	         =                       crc=1        finobt=0, sparse=0
+	data     =                       bsize=4096   blocks=2621440, imaxpct=25
+	         =                       sunit=1024   swidth=1024 blks
+	naming   =version 2              bsize=4096   ascii-ci=0 ftype=1
+	log      =internal log           bsize=4096   blocks=2560, version=2
+	         =                       sectsz=512   sunit=8 blks, lazy-count=1
+	realtime =none                   extsz=4096   blocks=0, rtextents=0
+	[root@ceph-client1 ~]# mkdir /mnt/ceph-vol1
+	[root@ceph-client1 ~]# mount /dev/r
+	random  raw/    rbd/    rbd0    rtc     rtc0    
+	[root@ceph-client1 ~]# mount /dev/r
+	random  raw/    rbd/    rbd0    rtc     rtc0    
+	[root@ceph-client1 ~]# mount /dev/rbd0 /mnt/ceph-vol1/
+	[root@ceph-client1 ~]# df -h
+	Filesystem               Size  Used Avail Use% Mounted on
+	devtmpfs                 475M     0  475M   0% /dev
+	tmpfs                    487M     0  487M   0% /dev/shm
+	tmpfs                    487M  7.7M  479M   2% /run
+	tmpfs                    487M     0  487M   0% /sys/fs/cgroup
+	/dev/mapper/centos-root   17G  1.7G   16G  10% /
+	/dev/sda1               1014M  136M  879M  14% /boot
+	tmpfs                     98M     0   98M   0% /run/user/0
+	/dev/rbd0                 10G   33M   10G   1% /mnt/ceph-vol1
+	[root@ceph-client1 ~]# dd if=/dev/zero of=/mnt/ceph-vol1 count=1000 bs=1M
+	dd: failed to open ‘/mnt/ceph-vol1’: Is a directory
+	[root@ceph-client1 ~]# dd if=/dev/zero of=/mnt/ceph-vol1/file1 count=1000 bs=1M
+	1000+0 records in
+	1000+0 records out
+	1048576000 bytes (1.0 GB) copied, 14.043 s, 74.7 MB/s
+	[root@ceph-client1 ~]# ls -la /mnt/ceph-vol1/
+	total 1024000
+	drwxr-xr-x  2 root root         19 Oct 12 17:56 .
+	drwxr-xr-x. 3 root root         23 Oct 12 17:55 ..
+	-rw-r--r--  1 root root 1048576000 Oct 12 17:57 file1
+
+#### 首先创建一个RBD存储池
+	[root@ceph-node1 ~]# ceph osd pool  create testrbd 256 256  
+#### 创建块设备
+	[root@ceph-node1 ~]# rbd pool init testrbd
+	[root@ceph-node1 ~]# rbd create --size 10G testrbd/ceph-client1-rbd1
+#### 列出RBD镜像的详细信息
+	[root@ceph-node1 ~]# rbd ls testrbd 
+	ceph-client1-rbd1
+#### 检查一个rbd镜像的详细信息，
+	[root@ceph-node1 ~]# rbd --image testrbd/ceph-client1-rbd1 info    
+rbd image 'ceph-client1-rbd1':
+        size 10 GiB in 2560 objects
+        order 22 (4 MiB objects)
+        snapshot_count: 0
+        id: 197404345a408
+        block_name_prefix: rbd_data.197404345a408
+        format: 2
+        features: layering, exclusive-lock, object-map, fast-diff, deep-flatten
+        op_features: 
+        flags: 
+        create_timestamp: Sat Oct 12 11:23:35 2019
+        access_timestamp: Sat Oct 12 11:23:35 2019
+        modify_timestamp: Sat Oct 12 11:23:35 2019
+#### 默认情况下，RBD镜像会存储在ceph集群的rbd存储池中，使用-p参数指定其它池。
+	[root@ceph-node1 ~]# rbd --image  ceph-client1-rbd1 info -p testrbd
+
+#### RBD映射到OS，创建文件系统
+	[root@ceph-client1 ~]# rbd map  testrbd/ceph-client1-rbd1
+	/dev/rbd0
+	[root@ceph-client1 ~]# rbd showmapped                    
+	id pool    namespace image             snap device    
+	0  testrbd           ceph-client1-rbd1 -    /dev/rbd0 
+
+#### 作为额外的磁盘或者设备使用
+	[root@ceph-client1 ~]# fdisk -l
+	
+	Disk /dev/sda: 21.5 GB, 21474836480 bytes, 41943040 sectors
+	Units = sectors of 1 * 512 = 512 bytes
+	Sector size (logical/physical): 512 bytes / 512 bytes
+	I/O size (minimum/optimal): 512 bytes / 512 bytes
+	Disk label type: dos
+	Disk identifier: 0x000c3110
+	
+	   Device Boot      Start         End      Blocks   Id  System
+	/dev/sda1   *        2048     2099199     1048576   83  Linux
+	/dev/sda2         2099200    41943039    19921920   8e  Linux LVM
+	
+	Disk /dev/mapper/centos-root: 18.2 GB, 18249416704 bytes, 35643392 sectors
+	Units = sectors of 1 * 512 = 512 bytes
+	Sector size (logical/physical): 512 bytes / 512 bytes
+	I/O size (minimum/optimal): 512 bytes / 512 bytes
+	
+	
+	Disk /dev/mapper/centos-swap: 2147 MB, 2147483648 bytes, 4194304 sectors
+	Units = sectors of 1 * 512 = 512 bytes
+	Sector size (logical/physical): 512 bytes / 512 bytes
+	I/O size (minimum/optimal): 512 bytes / 512 bytes
+	
+	
+	Disk /dev/rbd0: 10.7 GB, 10737418240 bytes, 20971520 sectors
+	Units = sectors of 1 * 512 = 512 bytes
+	Sector size (logical/physical): 512 bytes / 512 bytes
+	I/O size (minimum/optimal): 65536 bytes / 65536 bytes
+	
+	[root@ceph-client1 ~]# mkfs.xfs /dev/rbd0
+	meta-data=/dev/rbd0              isize=512    agcount=16, agsize=163840 blks
+	         =                       sectsz=512   attr=2, projid32bit=1
+	         =                       crc=1        finobt=0, sparse=0
+	data     =                       bsize=4096   blocks=2621440, imaxpct=25
+	         =                       sunit=16     swidth=16 blks
+	naming   =version 2              bsize=4096   ascii-ci=0 ftype=1
+	log      =internal log           bsize=4096   blocks=2560, version=2
+	         =                       sectsz=512   sunit=16 blks, lazy-count=1
+	realtime =none                   extsz=4096   blocks=0, rtextents=0
+
+	[root@ceph-client1 ~]# mkdir /dev/r
+	raw/rbd/ 
+	[root@ceph-client1 ~]# mkdir /mnt/ceph-vol1
+	[root@ceph-client1 ~]# mount /dev/rbd0 /mnt/ceph-vol1
+	[root@ceph-client1 ~]# df -h
+	Filesystem               Size  Used Avail Use% Mounted on
+	devtmpfs                 465M     0  465M   0% /dev
+	tmpfs                    478M     0  478M   0% /dev/shm
+	tmpfs                    478M  6.8M  472M   2% /run
+	tmpfs                    478M     0  478M   0% /sys/fs/cgroup
+	/dev/mapper/centos-root   17G  1.8G   16G  11% /
+	/dev/sda1               1014M  169M  846M  17% /boot
+	tmpfs                     96M     0   96M   0% /run/user/0
+	/dev/rbd0                 10G   33M   10G   1% /mnt/ceph-vol1
+
+#### 向CephRBD上存放数据
+	[root@ceph-client1 ~]# dd if=/dev/zero of=/mnt/ceph-vol1/file1 count=1000 bs=1M
+	[root@ceph-client1 ~]# ls -la /mnt/ceph-vol1/
+	total 1024000
+	drwxr-xr-x  2 root root         19 Oct 12 11:43 .
+	drwxr-xr-x. 3 root root         23 Oct 12 11:42 ..
+	-rw-r--r--  1 root root 1048576000 Oct 12 11:43 file1
+
+#### 移除rbd
+	[root@ceph-node1 ~]# rbd remove ceph-client-rbd1
