@@ -276,5 +276,35 @@ rbd image 'ceph-client1-rbd1':
 	drwxr-xr-x. 3 root root         23 Oct 12 11:42 ..
 	-rw-r--r--  1 root root 1048576000 Oct 12 11:43 file1
 
-#### 移除rbd
-	[root@ceph-node1 ~]# rbd remove ceph-client-rbd1
+### 调整Ceph RBD的大小
+Ceph支持自动精简配置的块设备，只有当把数据存储到这个块设备时，才会真正地使用物理存储空间。Ceph RADOS块设备非常灵活，可以自由增加和减少RBD的容量。当然，这需要底层的文件系统也支持调整容量。高级稳健系统（例如XFS，Btrfs,EXT和ZFS）都支持在指定条件下调整文件系统容量。
+#### 使用rbd  resize 命令的--size增加和减少Ceph镜像的容量
+	# 将RBD容量扩展到20G
+	[root@ceph-client1 ~]# rbd resize --size 20G testrbd/ceph-client1-rbd1 
+	# 将RDB容量缩减到10G 使用--allow-shrink
+	[root@ceph-client1 ~]# rbd resize --size 10G testrbd/ceph-client1-rbd1 --allow-shrink
+#### 容量调整完成后，使用xfs_grown检查容量是否已被内核所接收
+	[root@ceph-client1 ~]# xfs_growfs -d /mnt/ceph-vol1/
+	meta-data=/dev/rbd0              isize=512    agcount=16, agsize=163840 blks
+	         =                       sectsz=512   attr=2, projid32bit=1
+	         =                       crc=1        finobt=0 spinodes=0
+	data     =                       bsize=4096   blocks=2621440, imaxpct=25
+	         =                       sunit=16     swidth=16 blks
+	naming   =version 2              bsize=4096   ascii-ci=0 ftype=1
+	log      =internal               bsize=4096   blocks=2560, version=2
+	         =                       sectsz=512   sunit=16 blks, lazy-count=1
+	realtime =none                   extsz=4096   blocks=0, rtextents=0
+	data blocks changed from 2621440 to 5242880
+	
+	[root@ceph-client1 ~]# df -h
+	Filesystem               Size  Used Avail Use% Mounted on
+	devtmpfs                 465M     0  465M   0% /dev
+	tmpfs                    478M     0  478M   0% /dev/shm
+	tmpfs                    478M  6.8M  472M   2% /run
+	tmpfs                    478M     0  478M   0% /sys/fs/cgroup
+	/dev/mapper/centos-root   17G  1.8G   16G  11% /
+	/dev/sda1               1014M  169M  846M  17% /boot
+	tmpfs                     96M     0   96M   0% /run/user/0
+	/dev/rbd0                 20G  1.1G   19G   6% /mnt/ceph-vol1
+在客户端机器上，还需要扩展文件系统容量，以便能够使用新增的存储空间。从客户端角度来说，容量调整是OS文件停的特性。在调整热和分区容量之前，应该查阅相关文件系统文档。XFS文件系统支持在线调整容量。
+
