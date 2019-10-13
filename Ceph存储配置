@@ -511,10 +511,10 @@ eph文件系统或CephFS是在Ceph的分布式对象存储RADOS之上构建的PO
 	tmpfs                     96M     0   96M   0% /run/user/0
 	/dev/rbd0                 20G  1.1G   19G   6% /mnt/ceph-vol1
 	192.168.1.102:6789:/      13G     0   13G   0% /mnt/kernel_cephfs
-### 旧的的方式挂在CephFS,将秘钥存储在一个文件中，并将这个文件作为秘钥的挂载选项
+### 旧的的方式挂载CephFS,将秘钥存储在一个文件中，并将这个文件作为秘钥的挂载选项
 	[root@ceph-client1 ~]# echo "AQDKyZ9dQzpBEBAArba473MpELOhcGFlHomt1g==" > /etc/ceph/adminkey
 	[root@ceph-client1 ~]# mount -t ceph 192.168.1.102:6789:/ /mnt/kernel_cephfs -o name=admin,seecretfile=/etc/ceph/adminkey
-### 要在文件系统中挂在CephFS ，需要添加/etc/fstab文件
+### 要在文件系统中挂载CephFS ，需要添加/etc/fstab文件
 	[root@ceph-client1 ~]# vim /etc/fstab 
 	192.168.1.102:6789:/ /mnt/kernel_cephfs ceph name=admin,secret=AQDKyZ9dQzpBEBAArba473MpELOhcGFlHomt1g==  0 2
 ### 卸载并重新挂载Ceph_FS
@@ -560,7 +560,7 @@ eph文件系统或CephFS是在Ceph的分布式对象存储RADOS之上构建的PO
 	192.168.1.102:6789:/      13G     0   13G   0% /mnt/kernel_cephfs
 	ceph-fuse                 13G     0   13G   0% /mnt/fuse
 	[root@ceph-client1 ~]# 
-### 要在文件系统中挂在CephFS ，需要添加/etc/fstab文件
+### 要在文件系统中挂载CephFS ，需要添加/etc/fstab文件
 	[root@ceph-client1 ~]# vim /etc/fstab 
 	id=admin /mnt/fuse fuse.ceph default 0 0
 ### 卸载并重新挂载cephfs
