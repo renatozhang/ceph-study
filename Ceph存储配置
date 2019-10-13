@@ -2,14 +2,14 @@
 
 ## 创建Ceph块设备
 
-**Rados块设备（RBD）： 前身是ceph块设备，为Ceph客户端提供基于块得持久化存储，通常作为一个额外的磁盘使用。客户可以灵活地使用这个磁盘，可以作为裸设备使用，也可以格式化更文件系统，然后挂载它。RBD利用librbd库并将块数据连续地存储在跨越多个OSD的条带装存储空间中。RBD由Ceph的Rados层提供支持，因此每个块设备都分布多个Ceph节点上，从文提供了高性能和出色的可靠性。RBD具有丰富的企业特性，如自动精简配置（thin provisioning）、动态调整容量、快照、写时复制以及缓存等。RBD协议作为主线内核驱动程序有Linux完全支持；它还支持多种虚拟化平台，如KVM、QEMU和libvirt，使得虚拟机可以利用Ceph块设备。所有这些特点使RBD成为云平台（例如Openstack和Cloudstack）的一个理想选择。**
+**Rados块设备（RBD）： 前身是ceph块设备，为Ceph客户端提供基于块的持久化存储，通常作为一个额外的磁盘使用。客户可以灵活地使用这个磁盘，可以作为裸设备使用，也可以格式化成文件系统，然后挂载它。RBD利用librbd库并将块数据连续地存储在跨越多个OSD的条带装存储空间中。RBD由Ceph的Rados层提供支持，因此每个块设备都分布多个Ceph节点上，从文提供了高性能和出色的可靠性。RBD具有丰富的企业特性，如自动精简配置（thin provisioning）、动态调整容量、快照、写时复制以及缓存等。RBD协议作为主线内核驱动程序有Linux完全支持；它还支持多种虚拟化平台，如KVM、QEMU和libvirt，使得虚拟机可以利用Ceph块设备。所有这些特点使RBD成为云平台（例如Openstack和Cloudstack）的一个理想选择。**
 
 
 ## 创建Ceph文件系统
 
 **要创建Ceph的块设备，需要先登录Ceph集群的任意一个monitor节点，或者登录具有ceph集群管理员权限的一台管理主机。也可以在任意一个Ceph客户端节点上创建Ceph RBD。出于安全考虑，不应该吧Ceph管理秘钥保存在Ceph节点和管理主机之外的机器上**
 
-### 创建一个名为ceph-clent1-rbd1,大小为10240MB的RBD设备
+### 创建一个名为ceph-client1-rbd1,大小为10240MB的RBD设备
 #### 首先创建一个RBD存储池
 	[root@ceph-node1 ~]# ceph osd pool  create rbd 128 128  
 #### 创建块设备
@@ -127,7 +127,7 @@
 	[root@ceph-client1 ~]# vim /etc/default/grub 
 	GRUB_TIMEOUT=5
 	GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
-	GRUB_DEFAULT=saved
+	GRUB_DEFAULT=0
 	GRUB_DISABLE_SUBMENU=true
 	GRUB_TERMINAL_OUTPUT="console"
 	GRUB_CMDLINE_LINUX="crashkernel=auto spectre_v2=retpoline rd.lvm.lv=centos/root rd.lvm.lv=centos/swap rhgb quiet"
