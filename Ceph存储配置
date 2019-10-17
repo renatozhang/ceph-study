@@ -569,3 +569,174 @@ eph文件系统或CephFS是在Ceph的分布式对象存储RADOS之上构建的PO
 	ceph-fuse[16310]: starting ceph client
 	2019-10-13 20:56:54.126 7f1d4c008e00 -1 init, newargv = 0x5575fc268320 newargc=9
 	ceph-fuse[16310]: starting fuse
+	
+## 使用RADOS网关创建Ceph对象存储
+### 安装Ceph对象网关
+	[root@ceph-node1 ceph]# ceph-deploy install --rgw ceph-rgw
+	[root@ceph-node1 ceph]# ceph-deploy admin ceph-rgw
+### 创建一个网关实例
+	[root@ceph-node1 ceph]# ceph-deploy rgw create ceph-rgw
+	网关运行后，您应该能够7480 通过未认证的请求在端口上访问它，如下所示：
+	http://client-rgw:7480
+### 更改默认端口
+	[client.rgw.gateway-rgw]
+	rgw_frontends = "civetweb port=80"
+	ceph-deploy --overwrite-conf config push ceph-rgw
+
+## 在Rados网关上配置S3和Swift
+### 创建用于S3访问的RADOSGW用户
+	[root@ceph-node1 ~]# radosgw-admin user create --uid="testuser" --display-name="First User"
+	{
+	        "user_id": "testuser",
+	        "display_name": "First User",
+	        "email": "",
+	        "suspended": 0,
+	        "max_buckets": 1000,
+	        "subusers": [],
+	        "keys": [{
+	                "user": "testuser",
+	                "access_key": "I0PJDPCIYZ665MW88W9R",
+	                "secret_key": "dxaXZ8U90SXydYzyS5ivamEP20hkLSUViiaR+ZDA"
+	        }],
+	        "swift_keys": [],
+	        "caps": [],
+	        "op_mask": "read, write, delete",
+	        "default_placement": "",
+	        "placement_tags": [],
+	        "bucket_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "user_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "temp_url_keys": []
+	}
+
+### 创建一个SWIFT用户
+如果需要这种访问，则需要创建一个Swift子用户。创建Swift用户需要两个步骤。第一步是创建用户。第二个是创建密钥。
+在rgw主机上执行以下步骤：gateway host
+
+#### 创建Swift用户：
+
+	radosgw-admin subuser create --uid=testuser --subuser=testuser:swift --access=full
+输出将类似于以下内容：
+
+	{
+	        "user_id": "testuser",
+	        "display_name": "First User",
+	        "email": "",
+	        "suspended": 0,
+	        "max_buckets": 1000,
+	        "subusers": [{
+	                "id": "testuser:swift",
+	                "permissions": "full-control"
+	        }],
+	        "keys": [{
+	                "user": "testuser:swift",
+	                "access_key": "3Y1LNW4Q6X0Y53A52DET",
+	                "secret_key": ""
+	        }, {
+	                "user": "testuser",
+	                "access_key": "I0PJDPCIYZ665MW88W9R",
+	                "secret_key": "dxaXZ8U90SXydYzyS5ivamEP20hkLSUViiaR+ZDA"
+	        }],
+	        "swift_keys": [],
+	        "caps": [],
+	        "op_mask": "read, write, delete",
+	        "default_placement": "",
+	        "placement_tags": [],
+	        "bucket_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "user_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "temp_url_keys": []
+	 }
+#### 创建密钥：
+
+	radosgw-admin key create --subuser=testuser:swift --key-type=swift --gen-secret
+输出将类似于以下内容：
+
+	{
+	        "user_id": "testuser",
+	        "display_name": "First User",
+	        "email": "",
+	        "suspended": 0,
+	        "max_buckets": 1000,
+	        "subusers": [{
+	                "id": "testuser:swift",
+	                "permissions": "full-control"
+	        }],
+	        "keys": [{
+	                "user": "testuser:swift",
+	                "access_key": "3Y1LNW4Q6X0Y53A52DET",
+	                "secret_key": ""
+	        }, {
+	                "user": "testuser",
+	                "access_key": "I0PJDPCIYZ665MW88W9R",
+	                "secret_key": "dxaXZ8U90SXydYzyS5ivamEP20hkLSUViiaR+ZDA"
+	        }],
+	        "swift_keys": [{
+	                "user": "testuser:swift",
+	                "secret_key": "244+fz2gSqoHwR3lYtSbIyomyPHf3i7rgSJrF\/IA"
+	        }],
+	        "caps": [],
+	        "op_mask": "read, write, delete",
+	        "default_placement": "",
+	        "placement_tags": [],
+	        "bucket_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "user_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "temp_url_keys": []
+	}
+
+
+### 访问验证
+#### 测试S3 
+需要编写并运行Python测试脚本来验证S3访问。S3访问测试脚本将连接到radosgw，创建一个新存储桶并列出所有存储桶。对值aws_access_key_id和 aws_secret_access_key从的值取access_key和 secret_key由返回radosgw-admin命令。
+#### 安装该python-boto软件包：
+	yum install python-boto
+####创建Python脚本：
+
+	vi s3test.py
+
+	import boto.s3.connection
+	
+	access_key = 'I0PJDPCIYZ665MW88W9R'
+	secret_key = 'dxaXZ8U90SXydYzyS5ivamEP20hkLSUViiaR+ZDA'
+	conn = boto.connect_s3(
+	        aws_access_key_id=access_key,
+	        aws_secret_access_key=secret_key,
+	        host='{hostname}', port={port},
+	        is_secure=False, calling_format=boto.s3.connection.OrdinaryCallingFormat(),
+	       )
+	
+	bucket = conn.create_bucket('my-new-bucket')
+	for bucket in conn.get_all_buckets():
+	    print "{name} {created}".format(
+	        name=bucket.name,
+	        created=bucket.creation_date,
+	    )
+用{hostname}配置了网关服务的主机的主机名替换，即。替换 为您与Civetweb一起使用的端口号。gateway host{port}
+
+#### 运行脚本：
+
+	python s3test.py
+#### 输出将类似于以下内容：
+	my-new-bucket 2019-10-16-16T17:09:10.000Z
