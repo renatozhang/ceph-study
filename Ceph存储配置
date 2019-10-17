@@ -740,3 +740,106 @@ eph文件系统或CephFS是在Ceph的分布式对象存储RADOS之上构建的PO
 	python s3test.py
 #### 输出将类似于以下内容：
 	my-new-bucket 2019-10-16-16T17:09:10.000Z
+	
+## SwiftAPI兼容的Ceph对象存储
+
+Ceph对象存储支持与Swift API基于数据访问模型兼容的RESETful API。要是用Swift API访问对象存储，需要在Ceph RADOS网关上创建swift子用户，通过Swift子用户使用Swift API来访问Ceph对象存储。
+
+### 登录ceph-rgw并创建一个子用户用于访问Swift访问。该子用户会拥有自己的秘钥：
+
+	radosgw-admin subuser create --uid=testuser --subuser=testuser:swift --access=full
+输出将类似于以下内容：
+
+	{
+	        "user_id": "testuser",
+	        "display_name": "First User",
+	        "email": "",
+	        "suspended": 0,
+	        "max_buckets": 1000,
+	        "subusers": [{
+	                "id": "testuser:swift",
+	                "permissions": "full-control"
+	        }],
+	        "keys": [{
+	                "user": "testuser:swift",
+	                "access_key": "3Y1LNW4Q6X0Y53A52DET",
+	                "secret_key": ""
+	        }, {
+	                "user": "testuser",
+	                "access_key": "I0PJDPCIYZ665MW88W9R",
+	                "secret_key": "dxaXZ8U90SXydYzyS5ivamEP20hkLSUViiaR+ZDA"
+	        }],
+	        "swift_keys": [],
+	        "caps": [],
+	        "op_mask": "read, write, delete",
+	        "default_placement": "",
+	        "placement_tags": [],
+	        "bucket_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "user_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "temp_url_keys": []
+	 }
+### 创建密钥：
+
+	radosgw-admin key create --subuser=testuser:swift --key-type=swift --gen-secret
+输出将类似于以下内容：
+
+	{
+	        "user_id": "testuser",
+	        "display_name": "First User",
+	        "email": "",
+	        "suspended": 0,
+	        "max_buckets": 1000,
+	        "subusers": [{
+	                "id": "testuser:swift",
+	                "permissions": "full-control"
+	        }],
+	        "keys": [{
+	                "user": "testuser:swift",
+	                "access_key": "3Y1LNW4Q6X0Y53A52DET",
+	                "secret_key": ""
+	        }, {
+	                "user": "testuser",
+	                "access_key": "I0PJDPCIYZ665MW88W9R",
+	                "secret_key": "dxaXZ8U90SXydYzyS5ivamEP20hkLSUViiaR+ZDA"
+	        }],
+	        "swift_keys": [{
+	                "user": "testuser:swift",
+	                "secret_key": "244+fz2gSqoHwR3lYtSbIyomyPHf3i7rgSJrF\/IA"
+	        }],
+	        "caps": [],
+	        "op_mask": "read, write, delete",
+	        "default_placement": "",
+	        "placement_tags": [],
+	        "bucket_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "user_quota": {
+	                "enabled": false,
+	                "max_size_kb": -1,
+	                "max_objects": -1
+	        },
+	        "temp_url_keys": []
+	}
+
+### ceph-client1节点安装swift客户端
+	yum install python-setuptools
+	easy_install pip
+	pip install --upgrade setuptools
+	pip install python-swiftclient
+
+
+### 使用Swift客户端创建并查看bucket
+	[root@ceph-client1 ~]# swift -V 1 -A http://192.168.1.106:80/auth -U zhang:swift -K 'BRFUz4NzmapHlPQNfkYZ4TQWxQzrMjdjgpMQIUjY' post example-bucket
+	[root@ceph-client1 ~]# swift -V 1 -A http://192.168.1.106:80/auth -U zhang:swift -K 'BRFUz4NzmapHlPQNfkYZ4TQWxQzrMjdjgpMQIUjY' list
+	example-bucket
+	my-new-bucket
