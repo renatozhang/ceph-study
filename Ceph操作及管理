@@ -1,0 +1,666 @@
+# Ceph操作及管理
+## 向Ceph集群中扩容OSD节点
+
+### 检查当前集群中OSD的详细情况
+	[root@ceph-node1 ~]# ceph osd tree
+	ID CLASS WEIGHT  TYPE NAME           STATUS REWEIGHT PRI-AFF 
+	-1       0.07910 root default                                
+	-3       0.02637     host ceph-node1                         
+	 0   hdd 0.00879         osd.0           up  1.00000 1.00000 
+	 1   hdd 0.00879         osd.1           up  1.00000 1.00000 
+	 2   hdd 0.00879         osd.2           up  1.00000 1.00000 
+	-5       0.02637     host ceph-node2                         
+	 3   hdd 0.00879         osd.3           up  1.00000 1.00000 
+	 4   hdd 0.00879         osd.4           up  1.00000 1.00000 
+	 5   hdd 0.00879         osd.5           up  1.00000 1.00000 
+	-7       0.02637     host ceph-node3                         
+	 6   hdd 0.00879         osd.6           up  1.00000 1.00000 
+	 7   hdd 0.00879         osd.7           up  1.00000 1.00000 
+	 8   hdd 0.00879         osd.8           up  1.00000 1.00000 
+
+拓展集群是一个在线操作，为了对此进行说明，同时在Ceph集群上执行一些操作，同时进行拓展。
+### ceph-client1部署了ceph Rados块设备。
+	[root@ceph-client1 ~]#  df -h
+	Filesystem               Size  Used Avail Use% Mounted on
+	devtmpfs                 465M     0  465M   0% /dev
+	tmpfs                    478M     0  478M   0% /dev/shm
+	tmpfs                    478M  6.7M  472M   2% /run
+	tmpfs                    478M     0  478M   0% /sys/fs/cgroup
+	/dev/mapper/centos-root   17G  1.9G   16G  12% /
+	/dev/sda1               1014M  169M  846M  17% /boot
+	tmpfs                     96M     0   96M   0% /run/user/0
+	/dev/rbd0                 20G  1.1G   19G   6% /mnt/ceph-vol1
+
+### 准备一个ceph-node4节点（sdb-d）
+	[root@ceph-node1 ceph]# ceph-deploy install ceph-node4
+	[root@ceph-node1 ceph]# ceph-deploy disk list ceph-node4
+	[ceph-node4][INFO  ] Disk /dev/sdb: 10.7 GB, 10737418240 bytes, 20971520 sectors
+	[ceph-node4][INFO  ] Disk /dev/sdd: 10.7 GB, 10737418240 bytes, 20971520 sectors
+	[ceph-node4][INFO  ] Disk /dev/sdc: 10.7 GB, 10737418240 bytes, 20971520 sectors
+
+### 在线扩容
+#### 通过ceph-client1模拟负载，向Ceph集群写入一些数据流量
+
+	[root@ceph-client1 ~]# dd if=/dev/zero of=/mnt/ceph-vol1/file1 count=10240 bs=1M
+#### 添加OSD进行集群拓展
+[root@ceph-node1 ceph]# ceph-deploy disk zap ceph-node4 /dev/sdb /dev/sdc /dev/sdd
+[root@ceph-node1 ceph]# ceph-deploy osd create --data /dev/sdb ceph-node4    
+[root@ceph-node1 ceph]# ceph-deploy osd create --data /dev/sdc ceph-node4    	
+[root@ceph-node1 ceph]# ceph-deploy osd create --data /dev/sdd ceph-node4    
+#### 监控Ceph集群状态
+	# watch ceph status
+
+#### 查看集群当前状态
+	[root@ceph-node1 ceph]# ceph status
+	  cluster:
+	    id:     70b13ed7-2915-4d9c-b84f-c6cc0ac650ab
+	    health: HEALTH_WARN
+	            Degraded data redundancy: 3907/11583 objects degraded (33.730%), 124 pgs degraded, 2 pgs undersized
+	 
+	  services:
+	    mon: 3 daemons, quorum ceph-node1,ceph-node2,ceph-node3 (age 46h)
+	    mgr: ceph-node1(active, since 3h), standbys: ceph-node3, ceph-node2
+	    mds: cephfs:1 {0=ceph-node2=up:active}
+	    osd: 12 osds: 12 up (since 40s), 12 in (since 40s); 19 remapped pgs
+	    rgw: 1 daemon active (ceph-rgw)
+	 
+	  data:
+	    pools:   8 pools, 296 pgs
+	    objects: 3.86k objects, 14 GiB
+	    usage:   56 GiB used, 52 GiB / 108 GiB avail
+	    pgs:     3907/11583 objects degraded (33.730%)
+	             277/11583 objects misplaced (2.391%)
+	             161 active+clean
+	             114 active+recovery_wait+degraded
+	             9   active+recovery_wait+undersized+degraded+remapped
+	             8   active+remapped+backfill_wait
+	             2   active+recovering
+	             1   active+recovery_wait+degraded+remapped
+	             1   active+recovery_wait+undersized+remapped
+	 
+	  io:
+	    client:   3.3 KiB/s wr, 0 op/s rd, 0 op/s wr
+	    recovery: 26 MiB/s, 15 objects/s
+
+### 查看当前所有OSD
+
+	 [root@ceph-node1 ceph]# ceph osd tree
+	ID CLASS WEIGHT  TYPE NAME           STATUS REWEIGHT PRI-AFF 
+	-1       0.10547 root default                                
+	-3       0.02637     host ceph-node1                         
+	 0   hdd 0.00879         osd.0           up  1.00000 1.00000 
+	 1   hdd 0.00879         osd.1           up  1.00000 1.00000 
+	 2   hdd 0.00879         osd.2           up  1.00000 1.00000 
+	-5       0.02637     host ceph-node2                         
+	 3   hdd 0.00879         osd.3           up  1.00000 1.00000 
+	 4   hdd 0.00879         osd.4           up  1.00000 1.00000 
+	 5   hdd 0.00879         osd.5           up  1.00000 1.00000 
+	-7       0.02637     host ceph-node3                         
+	 6   hdd 0.00879         osd.6           up  1.00000 1.00000 
+	 7   hdd 0.00879         osd.7           up  1.00000 1.00000 
+	 8   hdd 0.00879         osd.8           up  1.00000 1.00000 
+	-9       0.02637     host ceph-node4                         
+	 9   hdd 0.00879         osd.9           up  1.00000 1.00000 
+	10   hdd 0.00879         osd.10          up  1.00000 1.00000 
+	11   hdd 0.00879         osd.11          up  1.00000 1.00000 
+	[root@ceph-node1 ceph]# 
+
+## Ceph 集群缩容
+
+Ceph 是一个完全的、灵活的存储系统，提供在线存储容量调整，不管是扩容还是缩容。
+
+## 从Ceph集群中移除并关闭一个OSD
+
+在减少集群容量或者缩容之前，确保集群有足够的空间存放所移除节点上的数据。集群不应处于接近满的装填。
+
+### 在ceph-clinet上制造负载，确保有ceph集群有足够的磁盘空间
+	[root@ceph-client1 ~]# dd if=/dev/zero of=/mnt/ceph-vol1/file1 count=3000 bs=1M
+### 移除OSD
+
+	[root@ceph-client1 ~]# ceph osd out osd.9
+	marked out osd.9. 
+	[root@ceph-client1 ~]# ceph osd out osd.10
+	marked out osd.10. 
+	[root@ceph-client1 ~]# ceph osd out osd.11
+	marked out osd.11. 
+	[root@ceph-client1 ~]# 
+### 查看集群状态
+	[root@ceph-client1 ~]# ceph status
+	  cluster:
+	    id:     70b13ed7-2915-4d9c-b84f-c6cc0ac650ab
+	    health: HEALTH_WARN
+	            Degraded data redundancy: 3787/11583 objects degraded (32.694%), 146 pgs degraded
+	 
+	  services:
+	    mon: 3 daemons, quorum ceph-node1,ceph-node2,ceph-node3 (age 18m)
+	    mgr: ceph-node1(active, since 4h), standbys: ceph-node3, ceph-node2
+	    mds: cephfs:1 {0=ceph-node2=up:active}
+	    osd: 12 osds: 12 up (since 18m), 9 in (since 34s); 38 remapped pgs
+	    rgw: 1 daemon active (ceph-rgw)
+	 
+	  data:
+	    pools:   8 pools, 296 pgs
+	    objects: 3.86k objects, 14 GiB
+	    usage:   42 GiB used, 39 GiB / 81 GiB avail
+	    pgs:     3787/11583 objects degraded (32.694%)
+	             241/11583 objects misplaced (2.081%)
+	             138 active+clean
+	             116 active+recovery_wait+degraded
+	             30  active+recovery_wait+undersized+degraded+remapped
+	             8   active+remapped+backfill_wait
+	             3   active+recovering
+	             1   active+recovering+undersized+remapped
+	 
+	  io:
+	    client:   2.6 KiB/s rd, 0 B/s wr, 2 op/s rd, 1 op/s wr
+	    recovery: 27 MiB/s, 11 objects/s
+	 
+	  progress:
+	    Rebalancing after osd.9 marked out
+	      [===========...................]
+	    Rebalancing after osd.11 marked out
+	      [=========.....................]
+	    Rebalancing after osd.10 marked out
+	      [====..........................]
+	# 可以看到集群处于恢复模式，
+
+### 停止OSD服务
+	ceph-osd@10.service  ceph-osd@11.service  ceph-osd@9.service
+	[root@ceph-node4 ~]# systemctl stop ceph-osd@
+	ceph-osd@10.service  ceph-osd@11.service  ceph-osd@9.service
+	[root@ceph-node4 ~]# systemctl stop ceph-osd@9
+	[root@ceph-node4 ~]# systemctl stop ceph-osd@10
+	^[[A[root@ceph-node4 ~]# systemctl stop ceph-osd@11
+	[root@ceph-node4 ~]# ceph osd tree
+
+### 检查OSD进程树
+	[root@ceph-node1 ~]# ceph osd tree
+	ID CLASS WEIGHT  TYPE NAME           STATUS REWEIGHT PRI-AFF 
+	-1       0.09668 root default                                
+	-3       0.02637     host ceph-node1                         
+	 0   hdd 0.00879         osd.0           up  1.00000 1.00000 
+	 1   hdd 0.00879         osd.1           up  1.00000 1.00000 
+	 2   hdd 0.00879         osd.2           up  1.00000 1.00000 
+	-5       0.02637     host ceph-node2                         
+	 3   hdd 0.00879         osd.3         down  1.00000 1.00000 
+	 4   hdd 0.00879         osd.4           up  1.00000 1.00000 
+	 5   hdd 0.00879         osd.5           up  1.00000 1.00000 
+	-7       0.02637     host ceph-node3                         
+	 6   hdd 0.00879         osd.6           up  1.00000 1.00000 
+	 7   hdd 0.00879         osd.7           up  1.00000 1.00000 
+	 8   hdd 0.00879         osd.8           up  1.00000 1.00000 
+	-9       0.01758     host ceph-node4                         
+	10   hdd 0.00879         osd.10        down        0 1.00000 
+	11   hdd 0.00879         osd.11        down        0 1.00000 
+	 9             0 osd.9                 down        0 1.00000 
+
+#### 停止ceph-node4上的OSD服务
+	[root@ceph-node4 ~]# systemctl stop ceph-osd@9
+	[root@ceph-node4 ~]# systemctl stop ceph-osd@10
+	[root@ceph-node4 ~]# systemctl stop ceph-osd@11
+
+## 从Ceph集群中移除OSD
+从ceph集群中移除OSD的过程包含从CRUSH map中移除OSD
+
+	[root@ceph-node1 ceph]# ceph osd crush remove osd.9
+	removed item id 9 name 'osd.9' from crush map
+	[root@ceph-node1 ceph]# ceph osd crush remove osd.10
+	removed item id 10 name 'osd.10' from crush map
+	[root@ceph-node1 ceph]# ceph osd crush remove osd.11
+	removed item id 11 name 'osd.11' from crush map
+从CRUSH map 中移除OSD后，Ceph集群变为健康状态，但还没有完全移除OSD
+
+	[root@ceph-node1 ceph]# ceph -s
+	  cluster:
+	    id:     70b13ed7-2915-4d9c-b84f-c6cc0ac650ab
+	    health: HEALTH_OK
+	 
+	  services:
+	    mon: 3 daemons, quorum ceph-node1,ceph-node2,ceph-node3 (age 4m)
+	    mgr: ceph-node1(active, since 4h), standbys: ceph-node3, ceph-node2
+	    mds: cephfs:1 {0=ceph-node2=up:active}
+	    osd: 12 osds: 9 up (since 3m), 9 in (since 27m)
+	    rgw: 1 daemon active (ceph-rgw)
+	 
+	  data:
+	    pools:   8 pools, 296 pgs
+	    objects: 3.86k objects, 14 GiB
+	    usage:   51 GiB used, 30 GiB / 81 GiB avail
+	    pgs:     296 active+clean
+
+
+### 移除OSD的秘钥
+	[root@ceph-node1 ~]# ceph auth del osd.9
+	updated
+	[root@ceph-node1 ~]# ceph auth del osd.10
+	updated
+	[root@ceph-node1 ~]# ceph auth del osd.11
+	updated
+### 从集群中移除OSD
+	[root@ceph-node1 ~]# ceph osd rm osd.9
+	[root@ceph-node1 ~]# ceph osd rm osd.10
+	[root@ceph-node1 ~]# ceph osd rm osd.11
+
+### 从CRUSH map中移除ceph-node4并清理该节点的所有痕迹
+	[root@ceph-node1 ~]# ceph osd crush remove ceph-node4
+
+### 检查集群状态
+	[root@ceph-node1 ~]# ceph status
+	  cluster:
+	    id:     70b13ed7-2915-4d9c-b84f-c6cc0ac650ab
+	    health: HEALTH_OK
+	 
+	  services:
+	    mon: 3 daemons, quorum ceph-node1,ceph-node2,ceph-node3 (age 14h)
+	    mgr: ceph-node1(active, since 21h), standbys: ceph-node2, ceph-node3
+	    mds: cephfs:1 {0=ceph-node2=up:active}
+	    osd: 9 osds: 9 up (since 14h), 9 in (since 15h)
+	    rgw: 1 daemon active (ceph-rgw)
+	 
+	  data:
+	    pools:   8 pools, 296 pgs
+	    objects: 3.86k objects, 14 GiB
+	    usage:   52 GiB used, 29 GiB / 81 GiB avail
+	    pgs:     296 active+clean	
+	
+## 替换故障设备
+作为一名Ceph存储管理人员，你需要管理带有大量物理磁盘的Ceph集群。随着Ceph集群中物理磁盘数量的快速增长，磁盘故障率也在增加。因此，对于一个Ceph存储管理员而言，替换出故障的磁盘设备可能成为一项重要任务。通常没必要担心一个或者多个磁盘设备出故障，因此Ceph会一句数据的副本数量及高可用性去管理数据。从Ceph集群中移除OSD的过程依赖数据的副本数量，以及从集群中的CRUSHmap移除出故障的OSD。
+
+### 关闭ceph-node2,卸载某个磁盘并启动
+
+	[root@ceph-node2 ~]# ceph osd tree
+	ID CLASS WEIGHT  TYPE NAME           STATUS REWEIGHT PRI-AFF 
+	-1       0.07910 root default                                
+	-3       0.02637     host ceph-node1                         
+	 0   hdd 0.00879         osd.0           up  1.00000 1.00000 
+	 1   hdd 0.00879         osd.1           up  1.00000 1.00000 
+	 2   hdd 0.00879         osd.2           up  1.00000 1.00000 
+	-5       0.02637     host ceph-node2                         
+	 3   hdd 0.00879         osd.3         down  1.00000 1.00000 
+	 4   hdd 0.00879         osd.4           up  1.00000 1.00000 
+	 5   hdd 0.00879         osd.5           up  1.00000 1.00000 
+	-7       0.02637     host ceph-node3                         
+	 6   hdd 0.00879         osd.6           up  1.00000 1.00000 
+	 7   hdd 0.00879         osd.7           up  1.00000 1.00000 
+	 8   hdd 0.00879         osd.8           up  1.00000 1.00000 
+可以发现ceph-node2包含一个故障的osd.3,他需要被替换
+
+### 标记OSD状态为out
+一旦OSD下线，Ceph会在某个时刻将该OSD标记为out,一般默认为300秒。如果没有，可以手工操作
+	[root@ceph-node2 ~]# ceph osd out osd.3
+	marked out osd.3.
+### 将故障的设备从CRUSH map中移除
+	 [root@ceph-node2 ~]# ceph osd crush rm osd.3
+	removed item id 3 name 'osd.3' from crush map
+### 移除OSD验证秘钥
+	[root@ceph-node2 ~]# ceph auth  del osd.3
+	updated
+### 最后从集群中移除OSD
+	[root@ceph-node2 ~]# ceph osd rm osd.3
+	removed osd.3
+### 添加新硬盘替换出Ceph节点中故障的磁盘，几乎所有的服务器硬件和操作系统支持磁盘的热更新，在替换磁盘时不需要重启。由于实验环境使用的是虚拟机，需要关闭虚拟机，添加新硬盘，再重启虚拟机。一旦磁盘插入，记得标识它在操作系统中的设备号。
+### 罗列所有磁盘。一般而言，新磁盘没有分区	
+	[root@ceph-node1 ceph]# ceph-deploy disk list ceph-node2  
+### 将磁盘添加到ceph集群
+	[root@ceph-node1 ceph]# ceph-deploy disk zap ceph-node2 /dev/sdb  
+### 基于磁盘创建OSD，Ceph会将它添加为osd.3
+	[root@ceph-node1 ceph]# ceph-deploy --overwrite-conf  osd create ceph-node2 --data /dev/sdb
+### 等待集群恢复
+新OSD创建后，Ceph会执行一个恢复操作，将PG数据从备用OSD移动到新OSD。恢复需要一段时间，直到Ceph集群再次恢复正常。
+
+	[root@ceph-node1 ceph]# ceph -s
+	  cluster:
+	    id:     70b13ed7-2915-4d9c-b84f-c6cc0ac650ab
+	    health: HEALTH_WARN
+	            Degraded data redundancy: 2889/11583 objects degraded (24.942%), 97 pgs degraded
+	 
+	  services:
+	    mon: 3 daemons, quorum ceph-node1,ceph-node2,ceph-node3 (age 7m)
+	    mgr: ceph-node1(active, since 21h), standbys: ceph-node3, ceph-node2
+	    mds: cephfs:1 {0=ceph-node2=up:active}
+	    osd: 9 osds: 9 up (since 21s), 9 in (since 21s); 51 remapped pgs
+	    rgw: 1 daemon active (ceph-rgw)
+	 
+	  data:
+	    pools:   8 pools, 296 pgs
+	    objects: 3.86k objects, 14 GiB
+	    usage:   52 GiB used, 29 GiB / 81 GiB avail
+	    pgs:     2889/11583 objects degraded (24.942%)
+	             279/11583 objects misplaced (2.409%)
+	             192 active+clean
+	             52  active+recovery_wait+degraded
+	             45  active+recovery_wait+undersized+degraded+remapped
+	             5   active+remapped+backfill_wait
+	             1   active+recovering+undersized+remapped
+	             1   active+recovering
+	 
+	  io:
+	    recovery: 16 MiB/s, 7 objects/s
+
+## 管理CRUSH map
+CRUSH mapz包含布局、如何自定义CRUSH map。当部署Ceph集群时，它会为集群创建一个默认的CRUSH map。这个默认的map可以用于实验环境和测试环境。然而，如果在生产环境中运行一个大规模的集群，可以考虑开发一个自定义CRUSH map用于保障更好的性能、可靠性以及数据安全性。
+
+## 确定CRUSH的位置
+CRUSH定位就是确定一个OSD在CRUSH map中的位置。例如，一个成为one-labs.com的组织机构拥有一个Ceph集群（CRUSH位置是osd.156）,属于名为ceph-node15的主机，该主机物理上存在于chassis-3，安装在rack-16中，这是room-2的一部分，并属于datacenter-1-north-FI。
+
+默认的CRUSH map包含root、datacenter、room、row、pod、pdu、rack、chassis、以及host。在定义一个CRUSH map时，并不强制使用CRUSH类型，但是已使用的CRUSH类型必须合法，否则会得到编译错误，CRUSH是非常灵活的，甚至可以定义自己的CRUSH类型，并按照自己的方式在CRUSH map中使用。
+
+## CRUSH map内部细节
+
+要知道CRUSH map的内部细节，需要提取它，反编译它，把它转化为人可读的格式，并易于编辑。我们可以在该阶段针对CRUSH map执行所有必要的改变，并让修改生效，编译并把它注入回ceph集群中。新CRUSH map给Ceph集群带来的变化是动态的，一旦新的CRUSH map注入集群中，在系统运行时变化就会马上生效，查看当前Ceph集群的CRUSH map
+
+### 从任意monitor节点提取CRUSH map
+	[root@ceph-node1 ~]# ceph osd getcrushmap -o crushmap_compiled_file
+### 反编译CRUSH map
+	[root@ceph-node1 ~]# crushtool -d crushmap_compiled_file -o crushmap_decompiled_file 
+### 修改完毕，使用-c命令选项编译修改后的文件
+	[root@ceph-node1 ~]# crushtool -c crushmap_decompiled_file -o newcrushmap
+### 最后使用-i选项，将新编译的CRUSH map注入Ceph集群中
+	[root@ceph-node1 ~]# ceph osd setcrushmap -i newcrushmap 
+
+### 一个CRUSH map文件分为四部分
+一、 CRUSH map设备列表：设备段包含集群中所有的osd列表信息。在一个ceph集群中，无论何时新增还是移除一个新的OSD，CRUSH map的设备列表都会自动更新。一般的，不需要改变这个部分的信息，由Ceph自行管理它。然而，如果需要添加一个新设备，在设备部分的尾部添加一行，并在OSD后面标注唯一设备号。如下所示：当前集群的CRUSH map中的设备信息。
+
+	# devices
+	device 0 osd.0 class hdd
+	device 1 osd.1 class hdd
+	device 2 osd.2 class hdd
+	device 3 osd.3 class hdd
+	device 4 osd.4 class hdd
+	device 5 osd.5 class hdd
+	device 6 osd.6 class hdd
+	device 7 osd.7 class hdd
+	device 8 osd.8 class hdd
+
+二、 CRUSH map bucket类型： 该部份定义在CRUSH map中使用到的bucket类型。默认的CRUSH map包含多个bucket类型，对于大部分Ceph集群足够使用。然而，基于需求，可以在该部分中添加或者删除bucket类型。为添加一个新的bucket段新增一行即可，并在bucket名称后输入类型及ID（下一个数字号）。当前集群默认的bucket列表如下：
+
+	# types
+	type 0 osd
+	type 1 host
+	type 2 chassis
+	type 3 rack
+	type 4 row
+	type 5 pdu
+	type 6 pod
+	type 7 room
+	type 8 datacenter
+	type 9 zone
+	type 10 region
+	type 11 root
+
+三、 CRUSH map bucket定义：一旦bucket类型已声明，对于主机和其他故障域，它就已定义。在本实验中，可以对ceph集群的体系架构进行整体调整，例如，定义host、row、rack、chassis、room、datacenter。同样可以定义bucket应使用的算法。bucket定义包含了多个参数，可以使用如下语法定义bucket
+[bucket-type] [bucket-name]{
+	id [a unique negative numeric ID]
+	weight [the relative capacity/capability of the items]
+	alg [the bucket type::uniform | list | tree | straw]
+	hash [the hash type L 0 by default]
+	item [item-name] weight [weight]
+}
+
+Uniform: 这种桶用完全相同的权重汇聚设备。例如，公司采购或淘汰硬件时，一般都有相同的物理配置（如批发）。当存储设备权重都相同时，你可以用uniform 桶类型，它允许 CRUSH 按常数把副本映射到 uniform 桶。权重不统一时，你应该采用其它算法。
+
+List: 这种桶把它们的内容汇聚为链表。它基于 RUSH P 算法，一个列表就是一个自然、直观的扩张集群：对象会按一定概率被重定位到最新的设备、或者像从前一样仍保留在较老的设备上。结果是优化了新条目加入桶时的数据迁移。然而，如果从链表的中间或末尾删除了一些条目，将会导致大量没必要的挪动。所以这种桶适合永不或极少缩减的场景。
+
+Tree: 它用一种二进制搜索树，在桶包含大量条目时比 list 桶更高效。它基于 RUSH R 算法， tree 桶把归置时间减少到了 O(log n) ，这使得它们更适合管理更大规模的设备或嵌套桶。
+
+Straw: list 和 tree 桶用分而治之策略，给特定条目一定优先级（如位于链表开头的条目）、或避开对整个子树上所有条目的考虑。这样提升了副本归置进程的性能，但是也导致了重新组织时的次优结果，如增加、拆除、或重设某条目的权重。 straw 桶类型允许所有条目模拟拉稻草的过程公平地相互“竞争”副本归置
+
+**Hash**
+
+　　各个桶都用了一种哈希算法，当前 Ceph 仅支持 rjenkins1 ，输入 0 表示哈希算法设置为 rjenkins1 。
+
+调整桶的权重
+
+　　Ceph 用双整形表示桶权重。权重和设备容量不同，我们建议用 1.00 作为 1TB 存储设备的相对权重，这样 0.5 的权重大概代表 500GB 、 3.00 大概代表 3TB 。较高级桶的权重是所有枝叶桶的权重之和。
+
+　　一个桶的权重是一维的，你也可以计算条目权重来反映存储设备性能。例如，如果你有很多 1TB 的硬盘，其中一些数据传输速率相对低、其他的数据传输率相对高，即使它们容量相同，也应该设置不同的权重（如给吞吐量较低的硬盘设置权重 0.8 ，较高的设置 1.20 ）。
+
+当前集群buckets部分定义：
+
+	# buckets
+	host ceph-node1 {
+	        id -3           # do not change unnecessarily
+	        id -4 class hdd         # do not change unnecessarily
+	        # weight 0.027
+	        alg straw2
+	        hash 0  # rjenkins1
+	        item osd.0 weight 0.009
+	        item osd.1 weight 0.009
+	        item osd.2 weight 0.009
+	}
+	host ceph-node2 {
+	        id -5           # do not change unnecessarily
+	        id -6 class hdd         # do not change unnecessarily
+	        # weight 0.027
+	        alg straw2
+	        hash 0  # rjenkins1
+	        item osd.4 weight 0.009
+	        item osd.5 weight 0.009
+	        item osd.3 weight 0.009
+	}
+	host ceph-node3 {
+	        id -7           # do not change unnecessarily
+	        id -8 class hdd         # do not change unnecessarily
+	        # weight 0.027
+	        alg straw2
+	        hash 0  # rjenkins1
+	        item osd.7 weight 0.009
+	        item osd.6 weight 0.009
+	        item osd.8 weight 0.009
+	}
+
+三、 CRUSH map规则：规定定义了如何从池中级工选择合适的bucket用于数据存放，对于一个较大规模的集群，可能有多个池；每一个池有它对应的CRUSH规则。CRUSH map规则有多个参数，可以使用如下语法创建一个CRUSH规则集：
+
+	rule <rulename>{
+	ruleset <ruleset>
+		type [ replicated | raid 4 ]
+		min_size <min_size>
+		max_size <max_size>
+		step tack <bucket-type>
+		step [choose|chooseleaf] [firsten|indep] <N> <bucket type>
+		stem emit
+	}
+
+### rules实例
+	# rules
+	rule data {
+			ruleset 0
+			type replicated
+			min_size 1
+			max size 10
+			step tack default
+			step chooseleaf firsten 0 type host
+			step emit
+	}
+
+	rule metadata {
+			ruleser 1
+			type replicated
+			min_size 1
+			max_size 10
+			step tack default
+			step choose firstn 0 type host
+			step emit
+	}
+	rule rbd {
+			ruleset 3
+			type replicated
+			min_size 1
+			max_size 10
+			step tack default
+			step choose firstn 0 type host
+			step emit
+	}
+
+#### ruleset 
+
+	　　　Description: 区分一条规则属于某个规则集的手段。给存储池设置规则集后激活。　　　
+	
+	　　　Purpose: 规则掩码的一个组件。
+	　　   Type: Integer
+	　　　Required: Yes
+	　　   Default: 0
+
+#### type
+
+	　　Description: 为硬盘（复制的）或 RAID 写一条规则。　　
+	　　Purpose: 规则掩码的一个组件。
+	　　Type: String
+	　　Required: Yes
+	　　Default: replicated　　
+	　　Valid Values: Currently only replicated
+
+ 
+
+#### min_size
+
+	　　Description: 如果一个归置组副本数小于此数， CRUSH 将不应用此规则。
+	　　Type: Integer
+	　　Purpose: 规则掩码的一个组件。
+	　　Required: Yes
+	　　Default: 1
+
+#### max_size
+
+	　　Description: 如果一个归置组副本数大于此数， CRUSH 将不应用此规则。
+	　　Type: Integer
+	　　Purpose: 规则掩码的一个组件。
+	　　Required: Yes
+	　　Default: 10
+
+#### step take <bucket-name>
+
+	　　Description: 选取桶名并迭代到树底。
+	　　Purpose: 规则掩码的一个组件。
+	　　Required: Yes
+	　　Example: step take data
+	
+#### step choose firstn {num} type {bucket-type}
+
+	　　Description:  选取指定类型桶的数量，这个数字通常是存储池的副本数（即 pool size ）。
+	　　　　如果 {num} == 0 选择 pool-num-replicas 个桶（所有可用的）；
+	　　　　如果 {num} > 0 && < pool-num-replicas 就选择那么多的桶；
+	　　　　如果 {num} < 0 它意为 pool-num-replicas - {num} 。
+	　　Purpose:  规则掩码的一个组件。
+	　　Prerequisite: 跟在 step take 或 step choose 之后。
+	　　Example:
+	
+	　　　　step choose firstn 1 type row
+
+#### step emit
+
+	　　Description: 输出当前值并清空堆栈。通常用于规则末尾，也适用于相同规则应用到不同树的情况。
+	　　Purpose: 规则掩码的一个组件。
+	　　Prerequisite: Follows step choose.
+	　　Example: step emit
+	
+	 　　Important: 把规则集编号设置到存储池，才能用一个通用规则集编号激活一或多条规则。
+
+### 主亲和性：
+	　　某一Ceph 客户端读写数据时，总是连接 acting set 里的主 OSD （如 [2, 3, 4] 中， osd.2 是主的）。有时候某个 OSD 与其它的相比并不适合做主 OSD （比如其硬盘慢、或控制器慢），最大化硬件利用率时为防止性能瓶颈（特别是读操作），你可以调整 OSD 的主亲和性，这样 CRUSH 就尽量不把它用作 acting set 里的主 OSD 了。
+	
+	　　　　ceph osd primary-affinity  <osd-id>  <weight>
+	
+	　　主亲和性默认为 1 （就是说此 OSD 可作为主 OSD ）。此值合法范围为 0-1 ，其中 0 意为此 OSD 不能用作主的， 1 意为 OSD 可用作主的；此权重小于 1 时， CRUSH 选择主 OSD 时选中它的可能性低。
+
+
+## 将不同的池置于不同的OSD中
+场景：基于SSD磁盘类型提供一个快速存储池，这样可以从Ceph集群获得更好的性能。对于不需要更好的I/O性能的数据，可以存放在较慢磁性驱动支持的池
+
+1. 假设ceph-node1是SSD节点的主机，拥有三块SSD
+2. ceph-node2和ceph-node3拥有sata磁盘。
+
+我们修改CRUSHmap并创建两个池，分别命令为SSD和SATA。SSD池的主副本在Ceph-node2或者ceph-node3上，因为SATA池对应这两个节点。
+
+### 从任意一个monitor节点中提取CRUSH map并反编译它
+
+	[root@ceph-node1 ~]# ceph osd getcrushmap -o curshmap-extract
+	[root@ceph-node1 ~]# crushtool -d crushmap-extract -o crushmap-decompiled
+### 使用编辑器编辑CRUSH map
+
+用root ssd bucket和root sata bucket代替root default bucket。root ssdbucket中包含一项ceph-node1，类似,root SATAbucket包含两个主机：
+
+	[root@ceph-node1 ~]# vim crushmap-decompiled 
+	root  ssd {
+	        id -1
+	        alg straw2
+	        hash 0
+	        item ceph-node1 weight 0.030
+	}
+	
+	root sata {
+	        id -5
+	        alg staw2
+	        hash 0
+	        item ceph-node2 weight 0.030
+	        item ceph-node3 weight 0.030
+	}
+
+为ssd和sata池添加新规则
+
+	# rules
+	rule replicated_rule {
+	        id 0
+	        type replicated
+	        min_size 1
+	        max_size 10
+	        step take sata
+	        step chooseleaf firstn 0 type host
+	        step emit
+	}
+	
+	rule sata {
+	        id 1
+	        type replicated
+	        min_size 1
+	        max_size 10
+	        step take sata
+	        step chooseleaf firstn 0 type host
+	        step emit
+	}
+	rule ssd {
+	        id 2
+	        type replicated
+	        min_size 1
+	        max_size 10
+	        step take ssd
+	        step chooseleaf firstn 0 type host
+	        step emit
+	}
+
+### 编译CRUSH文件并把它注入回CEPH集群中
+
+	[root@ceph-node1 ~]# crushtool -c crushmap-decompiled -o crushmap-compiled
+	[root@ceph-node1 ~]# ceph osd setcrushmap -i crushmap-compiled 
+一旦注入新的CRUSH map ，集群将会发生数据调整和数据恢复，但是很快就会进入HEALTH_OK状态。
+
+### 集群处于健康状态后，创建两个池，一个ssd池，一个sata池
+	[root@ceph-node1 ~]# ceph osd pool create sata 64 64
+	[root@ceph-node1 ~]# ceph osd pool create ssd 64 64 
+### 为sata和ssd池指定规则
+	[root@ceph-node1 ~]# ceph osd pool set sata crush_rule sata
+	set pool 10 crush_rule to sata
+	[root@ceph-node1 ~]# ceph osd pool set ssd crush_rule ssd
+	set pool 11 crush_rule to ssd
+### 验证数据池规则
+
+为了测试这两个新创建的池，我们会在他们上面放置一些数据，验证数据放置在哪些
+OSD上面。先创建一些数据
+
+	[root@ceph-node1 /]# dd if=/dev/zero of=sata.pool bs=1M count=32 conv=fsync
+	32+0 records in
+	32+0 records out
+	33554432 bytes (34 MB) copied, 0.21789 s, 154 MB/s
+	[root@ceph-node1 /]# dd if=/dev/zero of=ssd.pool bs=1M count=32 conv=fsync   
+	32+0 records in
+	32+0 records out
+	33554432 bytes (34 MB) copied, 0.052246 s, 642 MB/s
+	[root@ceph-node1 /]# ls *.pool
+	sata.pool  ssd.pool
+把这些文件放到Ceph集群上指定的池中
+
+	[root@ceph-node1 /]# ceph osd map ssd ssd.pool.object  
+	osdmap e1361 pool 'ssd' (11) object 'ssd.pool.object' -> pg 11.82fd0527 (11.27) -> up ([1], p1) acting ([1,5,7], p1)
+	[root@ceph-node1 /]# ceph osd map sata sata.pool.object
+	osdmap e1361 pool 'sata' (10) object 'sata.pool.object' -> pg 10.f71bcbc2 (10.2) -> up ([9,4,8], p9) acting ([9,4,8], p9)
+诊断前面的输出。第一个代表对应对象的主副本位于osd.1上，其他副本位于osd.5和osd.7上。
