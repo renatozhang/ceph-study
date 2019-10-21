@@ -1,0 +1,109 @@
+# Ceph 缓存分层
+> https://docs.ceph.com/docs/master/rados/operations/cache-tiering/
+
+缓存分层是在更快的磁盘（通常是SSD），上创建一个Ceph池。这个缓存池应该放置在一个常规的复制池或erasure池的前端，这样所有的客户端I/O操作都首先由缓存池处理。之后，再将数据写回到现有的数据池中。
+
+客户端能够在缓存池上享受高性能，而它们的数据显而易见最终写入到常规池中的。
+
+一般来说，缓存层构建在昂贵/速度更快的SSD磁盘上，这样才能为客户提供更好的I/O性能。在缓存池后端通常是存储层，它由复制或者erasure类型的HDD组成。在这种类型的设置中，客户端将I/O请求提交到缓存池，不管它是一个读或写操作，它请求都能够立即获得响应。速度更快的缓存层为客户端提供服务。一段时间后，缓存层将所有数据写回备用的存储层，以便它客户缓存来自客户端的新请求。在缓存层和存储层之间的数据迁移都是自动触发且对客户端是透明的。缓存层能以下模式进行配置。
+
+## writeback模式：
+当Ceph的缓存分层配置为writeback模式时。Ceph客户端将数据写入缓存层类型的池，也就是速度更快的池，因此能够立即接收写入确认。基于为缓存层设置的flushing/evicting策略，数据将从缓存层迁移到存储层，并最终由缓存层代理将其从缓存层删除。处理客户端读操作时，首先由缓存分层代理将数据从存储层迁移到缓存层，然后再把它提供给客户。知道数据变得不在活跃成为冷数据，否则它将一直保留在缓存层中。
+ 
+## readonly模式
+当Ceph的缓存分层配置为read-only模式时，它只适用与处理客户端的读操作。客户端的写操作不涉及缓存分层，所有的客户端都写在存储层上完成。在处理来自客户端的读操作时，缓存分层代理将请求的数据复制到缓存层。基于为缓存层配置的策略，不活跃的对象将从缓存层中删除。这种方法非常适合多个客户端需要兑取大量类似的数据的场景。
+## 部署缓存池
+
+缓存层是在速度更快的物理磁盘（通常是SSD），上实现的，它在使用HDD构建的速度较慢的常规池前部署一个快速的缓存层。在本实验中，我们将创建两个独立的池（一个缓存池和一个常规），分别用作缓存层和存储层。
+### 新建池
+创建一个缓存池基于（osd.0、osd.3、osd.6、）。事实上，当前环境并没有SSD，建设这些OSD是SSD并在其上创建一个缓存池。
+
+### 获取CRUSH map并反编译它
+	[root@ceph-node1 ~]# ceph osd getcrushmap -o crushmapdump
+	[root@ceph-node1 ~]# crushtool -d crushmapdump -o crushmapdump-complied 
+### 编辑反编译得到的CRUSH map文件，在root default 下加入如下内容
+	root cache {
+	        id -10          # do not change unnecessarily
+	        id -9 class hdd         # do not change unnecessarily
+	        # weight 0.027
+	        alg straw2
+	        hash 0  # rjenkins1
+	        item osd.0 weight 0.009
+	        item osd.3 weight 0.009
+	        item osd.6 weight 0.009
+	}
+
+**根据实际环境修改CRUSH map文件**
+
+### 创建rule
+	rule cache-pool {
+	        id 4
+	        type replicated
+	        min_size 1
+	        max_size 10
+	        step take cache
+	        step chooseleaf firstn 0 type osd
+	        step emit
+	}
+### 编译新的CRUSH map并导入到Ceph集群
+	[root@ceph-node1 ~]# crushtool -c crushmapdump-complied -o crushmapdump
+	[root@ceph-node1 ~]# ceph osd setcrushmap -i crushmapdump-complied
+### 一旦应用了新的CRUSH map，检查OSD状态查看新的OSD分布。会看到一个cache的新的root bucket
+	[root@ceph-node1 ~]# ceph osd tree
+	ID  CLASS WEIGHT  TYPE NAME           STATUS REWEIGHT PRI-AFF 
+	-10       0.02696 root cache                                  
+	  0   hdd 0.00899     osd.0               up  1.00000 1.00000 
+	  3   hdd 0.00899     osd.3               up  1.00000 1.00000 
+	  6   hdd 0.00899     osd.6               up  1.00000 1.00000 
+	 -1       0.07796 root default                                
+	 -3       0.02599     host ceph-node1                         
+	  0   hdd 0.00899         osd.0           up  1.00000 1.00000 
+	  1   hdd 0.00899         osd.1           up  1.00000 1.00000 
+	  2   hdd 0.00899         osd.2           up  1.00000 1.00000 
+	 -5       0.02599     host ceph-node2                         
+	  3   hdd 0.00899         osd.3           up  1.00000 1.00000 
+	  4   hdd 0.00899         osd.4           up  1.00000 1.00000 
+	  5   hdd 0.00899         osd.5           up  1.00000 1.00000 
+	 -7       0.02599     host ceph-node3                         
+	  6   hdd 0.00899         osd.6           up  1.00000 1.00000 
+	  7   hdd 0.00899         osd.7           up  1.00000 1.00000 
+	  8   hdd 0.00899         osd.8           up  1.00000 1.00000 
+### 新建一个池并设定它的crush_ruleset是4（cache-pool）
+	[root@ceph-node1 ~]# ceph osd pool create  cache-pool 32 32 cache-pool            
+	pool 'cache-pool' created
+	[root@ceph-node1 ~]# ceph osd dump | grep cache-pool
+	pool 3 'cache-pool' replicated size 3 min_size 2 crush_rule 4 object_hash rjenkins pg_num 32 pgp_num 32 autoscale_mode warn last_change 66 flags hashpspool stripe_width 0
+### 检查cache-pool数据存放位置
+#### 列出缓存池中的所有对象
+	[root@ceph-node1 ~]# rados -p cache-pool ls
+#### 向缓存池中添加一个临时对象，验证对象存储在正确OSD上
+	[root@ceph-node1 ~]# rados -p cache-pool ls
+	object
+	[root@ceph-node1 ~]# ceph osd map cache-pool object
+	osdmap e66 pool 'cache-pool' (3) object 'object' -> pg 3.570e3222 (3.2) -> up ([3,6,0], p3) acting ([3,6,0], p3)
+#### 删除这个对象
+	[root@ceph-node1 ~]# rados -p cache-pool rm object
+### 新建缓存层（writeback）
+#### 设置缓存池，绑定存储池作为缓存池。
+	[root@ceph-node1 ~]# ceph osd tier add EC_pool cache-pool 
+#### 设置缓存层模式为writeback或者readonly。本次使用writeback
+	[root@ceph-node1 ~]# ceph osd tier cache-mode cache-pool writeback
+	set cache-mode for pool 'cache-pool' to writeback
+#### 为了把标准的所有客户端请求转到缓存池，需要设置overlay
+	[root@ceph-node1 ~]# ceph osd tier set-overlay EC-pool cache-pool
+	overlay for 'EC-pool' is now (or already was) 'cache-pool'
+#### 检查池的细节
+发现EC池的tier、read_tier和write_tier设置为3,它是缓存池的ID。
+
+同样，对于缓存池，发现tier_of设置为2,cache_mode设置为writeback。这就设置都表明已经正确配置缓存池
+
+	[root@ceph-node1 ~]# ceph osd dump | egrep -i "EC-pool|cache-pool"
+	pool 2 'EC-pool' erasure size 5 min_size 4 crush_rule 1 object_hash rjenkins pg_num 128 pgp_num 128 autoscale_mode warn last_change 69 lfor 69/69/69 flags hashpspool tiers 3 read_tier 3 write_tier 3 stripe_width 12288
+	pool 3 'cache-pool' replicated size 3 min_size 2 crush_rule 4 object_hash rjenkins pg_num 32 pgp_num 32 autoscale_mode warn last_change 69 lfor 69/69/69 flags hashpspool,incomplete_clones tier_of 2 cache_mode writeback stripe_width 0
+### 配置缓存层
+缓存层有几个配置选项，应该为缓存池配置一些参数以实现策略的设置。
+
+#### 为缓存池启用hit set tracking生产级别的缓存层使用bloom过滤器（高速缓存层级）
+
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool hit_set_type bloom
+	set pool 3 hit_set_type to bloom
