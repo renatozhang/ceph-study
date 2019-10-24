@@ -107,3 +107,62 @@
 
 	[root@ceph-node1 ~]# ceph osd pool set cache-pool hit_set_type bloom
 	set pool 3 hit_set_type to bloom
+#### 启用hit_set_count,即缓存池中的hit_set次数
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool hit_set_count 1
+	set pool 3 hit_set_count to 1
+#### 启用hit_set_period,这个是hit set 在缓存池中的有效期，以秒为单位
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool hit_set_period 300
+	set pool 3 hit_set_period to 300
+#### 设置缓存分层开始从缓存池将对象写回后端存储或删除前，允许存放的最大字节数
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool target_max_bytes 10000000 
+#### 启用target_max_objects,它是缓存分层代理开始从缓存池中将对象写回后端存储或者删除前，允许存放的最大对象数
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool target_max_objects 10000
+#### 启用cache_min_flush_age和cache_min_evict_age,他们是缓存代理将数据从缓存层刷新到存储层然后删除这些数据的最小时间间隔（以秒为单位）
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool cache_min_flush_age 300
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool cache_min_evict_age 300  
+#### 启用cache_target_dirty_ratio，它是缓存分层代理开始将数据写回存储前，允许缓存池中被修改的数据总量所占池总量的百分比
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool cache_target_dirty_ratio 0.4
+#### 启用cache_target_full_ratio,它是缓存分层代理开始将数据写回存储层前，允许缓存池存放未经修改的数据总量站缓存池总容量的百分比
+	[root@ceph-node1 ~]# ceph osd pool set cache-pool cahce_target_full_tatio 0.8
+#### 新建一个500MB的临时文件，并将它放入EC-pool池中，最终它会被写入一个缓存池中
+	[root@ceph-node1 ~]# dd if=/dev/zero of=/tmp/file1 bs=1M count=500
+#### 因为EC-pool已经和一个缓存池绑定，所以file1不会在第一时间就写入EC-pool。应该先写入缓存池。列出没个池的对象名。使用date命令来跟踪变化
+	[root@ceph-node1 ~]# rados -p EC-pool put object1 /tmp/file1
+	[root@ceph-node1 ~]# rados -p EC-pool ls
+	[root@ceph-node1 ~]# rados -p cache-pool ls
+	[root@ceph-node1 ~]# date
+#### 超出cache_min_evict_age设置的时间后，缓存池将数据写入EC-pool
+	[root@ceph-node1 ~]# date
+	[root@ceph-node1 ~]# rados -p EC-pool ls
+	[root@ceph-node1 ~]# rados -p cache-pool ls
+	如果缓存池仍然有对象，您可以手动刷新它们。 例如：
+	rados -p {cachepool} cache-flush-evict-all
+
+注意Ceph不能自动确定缓存池的大小，所以这里需要绝对大小的配置，否则flush / evict将不起作用。 如果同时指定了这两个限制，则当触发任何阈值时，缓存分层代理将开始刷新或逐出。
+
+注意仅当达到target_max_bytes或target_max_objects时，所有客户端请求才会被阻止
+如果缓存池仍然有对象，您可以手动刷新它们。 例如：
+rados -p {cachepool} cache-flush-evict-all
+
+
+# 使用RADOS bash对Ceph进行基准测试
+
+该工具的语法为：rados bench -p <pool_name> <seconds> <write|seq|rand> -b <block size> -t --no-cleanup
+
+pool_name：测试所针对的存储池
+seconds：测试所持续的秒数
+<write|seq|rand>：操作模式，write：写，seq：顺序读；rand：随机读
+-b：block size，即块大小，默认为 4M
+-t：读/写并行数，默认为 16
+--no-cleanup 表示测试完成后不删除测试用数据。在做读测试之前，需要使用该参数来运行一遍写测试来产生测试数据，在全部测试结束后可以运行 rados -p <pool_name> cleanup 来清理所有测试数据。
+
+
+## 写测试
+	rados bench -p EC-pool 10 write --no-cleanup
+
+## 顺序读测试
+	rados bench -p EC-pool 10 seq
+## 随机读测试
+	rados bench -p EC-pool 10 rand
+	
+
